@@ -1,9 +1,9 @@
 # Template file for 'MultiMC-Cracked'
 pkgname=MultiMC-Cracked
 version=0.6.12
-revision=3
+revision=4
 _pkgname=MultiMC
-wrksrc="${_pkgname}5-${version}"
+wrksrc="Launcher-${version}"
 _commithashnbt="4b305bbd2ac0e7a26987baf7949a484a87b474d4"
 _nbtversion="multimc-0.6.1"
 _quazipversion="multimc-3"
@@ -16,10 +16,10 @@ short_desc="Instanced Minecraft client"
 maintainer="Henry Naguski <henry@nilsu.org>"
 license="Apache-2.0"
 homepage="http://multimc.org"
-distfiles="https://github.com/${_pkgname}/${_pkgname}5/archive/${version}.tar.gz
+distfiles="https://github.com/${_pkgname}/Launcher/archive/${version}.tar.gz
  https://github.com/${_pkgname}/libnbtplusplus/archive/${_nbtversion}.tar.gz
  https://github.com/${_pkgname}/quazip/archive/${_quazipversion}.tar.gz"
-checksum="c251744b77d93db4ead56940b7b81d30dc5390fb86a1676d3f0364cc4e570185
+checksum="9be496910e53a7e07454b6c4433cf6d540a3c3fea01762ac3390f19a001cb4c9
  36c816e6b1ef8ece52c57dfa9bfda3a23808d0c6c3288b25d8bcf49c7cdb5b07
  ffa60368b1c196859691b637c740f4c60597b2ac47217995082ae8b2a3a9ac18"
 conflicts="MultiMC"
