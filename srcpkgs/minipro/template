@@ -1,0 +1,21 @@
+# Template file for 'minipro'
+pkgname=minipro
+version=9999
+revision=1
+wrksrc=minipro-master
+build_style=gnu-makefile
+make_use_env=compliant
+hostmakedepends="pkg-config libusb-devel"
+makedepends="libusb-devel which"
+depends="libusb"
+short_desc="Program for controlling the MiniPRO TL866xx series of chip programmers"
+maintainer="Quentin Freimanis <quentinfreimanis@gmail.com>"
+license="GPL-3.0-only"
+homepage="https://gitlab.com/natehouk/minipro"
+distfiles="https://gitlab.com/DavidGriffith/minipro/-/archive/master/minipro-master.tar.gz"
+
+post_install() {
+	vmkdir usr/lib/udev/rules.d
+	vinstall udev/60-minipro.rules 644 usr/lib/udev/rules.d/
+	vinstall udev/61-minipro-uaccess.rules 644 usr/lib/udev/rules.d/
+}
