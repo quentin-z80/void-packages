@@ -1,0 +1,22 @@
+# Template file for 'LookingGlass'
+pkgname=LookingGlass
+version=B4
+revision=1
+archs="x86_64*"
+wrksrc=looking-glass-B4
+build_wrksrc=client
+build_style=cmake
+configure_args="-DCMAKE_EXE_LINKER_FLAGS=-ldl"
+hostmakedepends="pkg-config"
+makedepends="SDL2-devel SDL2_ttf-devel binutils-devel fontconfig-devel gmp-devel
+ libX11-devel nettle-devel spice-devel wayland-devel wayland-protocols"
+short_desc="Low latency KVMFR implementation for guests with VGA PCI Passthrough"
+maintainer="Quentin Freimanis <quentinfreimanis@gmail.com>"
+license="GPL-2.0-or-later"
+homepage="https://github.com/gnif/LookingGlass"
+distfiles="https://github.com/gnif/LookingGlass/archive/refs/tags/${version}.tar.gz>${pkgname}-${version}.tar.gz"
+checksum=50edad0fb2a09c6b29763e52c162ddbd3e2b70affc393bace43057a6c3e31efd
+
+case "$XBPS_TARGET_MACHINE" in
+	*-musl) configure_args+=" -DENABLE_BACKTRACE=OFF" ;;
+esac
