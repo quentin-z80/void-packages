@@ -1,9 +1,10 @@
 # Template file for 'minipro'
 pkgname=minipro
 version=9999
-revision=1
+revision=3
 wrksrc=minipro-master
 build_style=gnu-makefile
+make_build_args="PREFIX=/usr"
 make_use_env=compliant
 hostmakedepends="pkg-config libusb-devel"
 makedepends="libusb-devel which"
@@ -13,6 +14,7 @@ maintainer="Quentin Freimanis <quentinfreimanis@gmail.com>"
 license="GPL-3.0-only"
 homepage="https://gitlab.com/natehouk/minipro"
 distfiles="https://gitlab.com/DavidGriffith/minipro/-/archive/master/minipro-master.tar.gz"
+checksum=627f34a469b01ab8da5ebc3aa07e05d99578af835be5ebe1a6df6d4d068a150e
 
 post_install() {
 	vmkdir usr/lib/udev/rules.d
