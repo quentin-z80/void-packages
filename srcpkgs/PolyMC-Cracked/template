@@ -1,0 +1,42 @@
+# Template file for 'PolyMC'
+_pkgname=PolyMC
+pkgname=${_pkgname}-Cracked
+version=1.0.6
+revision=1
+wrksrc=${_pkgname}-${version}
+_nbtversion="dc72a20b7efd304d12af2025223fad07b4b78464"
+_quazipversion="c9ef32de19bceb58d236f5c22382698deaec69fd"
+build_style=cmake
+configure_args="-DLauncher_BUILD_PLATFORM=Void -DLauncher_LAYOUT=lin-system
+ -DLauncher_APP_BINARY_NAME=polymc"
+hostmakedepends="openjdk11 qt5-host-tools qt5-qmake tar"
+makedepends="qt5-devel"
+depends="virtual?java-environment"
+short_desc="Custom launcher for Minecraft"
+maintainer="Quentin Freimanis <quentinfreimanis@gmail.com>"
+license="Apache-2.0, GPL-3.0-or-later, LGPL-3.0-or-later, LGPL-2.1-or-later,
+ MIT, BSD-3-Clause, BSD-2-Clause"
+homepage="https://polymc.org/"
+distfiles="https://github.com/${_pkgname}/${_pkgname}/archive/${version}.tar.gz
+ https://github.com/MultiMC/libnbtplusplus/archive/${_nbtversion}.tar.gz
+ https://github.com/${_pkgname}/quazip/archive/${_quazipversion}.tar.gz"
+checksum="78c7b24c6895a37f45f563b88cf0ad5cf26dd66264383ed77909e66065df9ea6
+ 2ed9dc824007b4f7b12f807f56c98e1248b8a7aba7eca4838085092958dc1595
+ 6c5e719833c143f300d7f6101b3c04dfb1bc025e3f672d803dcef0fbce29e254"
+skip_extraction="${_nbtversion}.tar.gz ${_quazipversion}.tar.gz"
+conflicts="PolyMC"
+
+case "$XBPS_TARGET_MACHINE" in
+	armv*) broken="https://github.com/MultiMC/MultiMC5/issues/2895";;
+esac
+
+pre_configure() {
+	tar zxvf "${XBPS_SRCDISTDIR}/${pkgname}-${version}/${_nbtversion}.tar.gz" \
+		-C "${wrksrc}/libraries/libnbtplusplus" --strip-components 1
+	tar zxvf "${XBPS_SRCDISTDIR}/${pkgname}-${version}/${_quazipversion}.tar.gz" \
+		-C "${wrksrc}/libraries/quazip" --strip-components 1
+}
+
+post_install() {
+	vlicense COPYING.md
+}

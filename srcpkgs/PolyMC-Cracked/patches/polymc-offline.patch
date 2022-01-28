@@ -1,0 +1,623 @@
+diff --git a/launcher/CMakeLists.txt b/launcher/CMakeLists.txt
+index b5c52afa..df361447 100644
+--- a/launcher/CMakeLists.txt
++++ b/launcher/CMakeLists.txt
+@@ -221,7 +221,11 @@ set(MINECRAFT_SOURCES
+     minecraft/auth/flows/Mojang.h
+     minecraft/auth/flows/MSA.cpp
+     minecraft/auth/flows/MSA.h
++    minecraft/auth/flows/Offline.cpp
++    minecraft/auth/flows/Offline.h
+
++    minecraft/auth/steps/OfflineStep.cpp
++    minecraft/auth/steps/OfflineStep.h
+     minecraft/auth/steps/EntitlementsStep.cpp
+     minecraft/auth/steps/EntitlementsStep.h
+     minecraft/auth/steps/GetSkinStep.cpp
+@@ -769,6 +773,8 @@ SET(LAUNCHER_SOURCES
+     ui/dialogs/LoginDialog.h
+     ui/dialogs/MSALoginDialog.cpp
+     ui/dialogs/MSALoginDialog.h
++    ui/dialogs/OfflineLoginDialog.cpp
++    ui/dialogs/OfflineLoginDialog.h
+     ui/dialogs/NewComponentDialog.cpp
+     ui/dialogs/NewComponentDialog.h
+     ui/dialogs/NewInstanceDialog.cpp
+@@ -880,6 +886,7 @@ qt5_wrap_ui(LAUNCHER_UI
+     ui/dialogs/ExportInstanceDialog.ui
+     ui/dialogs/IconPickerDialog.ui
+     ui/dialogs/MSALoginDialog.ui
++    ui/dialogs/OfflineLoginDialog.ui
+     ui/dialogs/AboutDialog.ui
+     ui/dialogs/LoginDialog.ui
+     ui/dialogs/EditAccountDialog.ui
+diff --git a/launcher/LaunchController.cpp b/launcher/LaunchController.cpp
+index 7750be1a..32fc99cb 100644
+--- a/launcher/LaunchController.cpp
++++ b/launcher/LaunchController.cpp
+@@ -116,6 +116,12 @@ void LaunchController::login() {
+         m_session->wants_online = m_online;
+         m_accountToUse->fillSession(m_session);
+
++        // Launch immediately in true offline mode
++        if(m_accountToUse->isOffline()) {
++            launchInstance();
++            return;
++        }
++
+         switch(m_accountToUse->accountState()) {
+             case AccountState::Offline: {
+                 m_session->wants_online = false;
+diff --git a/launcher/minecraft/auth/AccountData.cpp b/launcher/minecraft/auth/AccountData.cpp
+index 7526c951..9b84fe1a 100644
+--- a/launcher/minecraft/auth/AccountData.cpp
++++ b/launcher/minecraft/auth/AccountData.cpp
+@@ -314,6 +314,8 @@ bool AccountData::resumeStateFromV3(QJsonObject data) {
+         type = AccountType::MSA;
+     } else if (typeS == "Mojang") {
+         type = AccountType::Mojang;
++    } else if (typeS == "Offline") {
++        type = AccountType::Offline;
+     } else {
+         qWarning() << "Failed to parse account data: type is not recognized.";
+         return false;
+@@ -363,6 +365,9 @@ QJsonObject AccountData::saveState() const {
+         tokenToJSONV3(output, xboxApiToken, "xrp-main");
+         tokenToJSONV3(output, mojangservicesToken, "xrp-mc");
+     }
++    else if (type == AccountType::Offline) {
++        output["type"] = "Offline";
++    }
+
+     tokenToJSONV3(output, yggdrasilToken, "ygg");
+     profileToJSONV3(output, minecraftProfile, "profile");
+@@ -371,7 +376,7 @@ QJsonObject AccountData::saveState() const {
+ }
+
+ QString AccountData::userName() const {
+-    if(type != AccountType::Mojang) {
++    if(type == AccountType::MSA) {
+         return QString();
+     }
+     return yggdrasilToken.extra["userName"].toString();
+@@ -427,6 +432,9 @@ QString AccountData::accountDisplayString() const {
+         case AccountType::Mojang: {
+             return userName();
+         }
++        case AccountType::Offline: {
++            return userName();
++        }
+         case AccountType::MSA: {
+             if(xboxApiToken.extra.contains("gtg")) {
+                 return xboxApiToken.extra["gtg"].toString();
+diff --git a/launcher/minecraft/auth/AccountData.h b/launcher/minecraft/auth/AccountData.h
+index abf84e43..606c1ad1 100644
+--- a/launcher/minecraft/auth/AccountData.h
++++ b/launcher/minecraft/auth/AccountData.h
+@@ -38,7 +38,8 @@ struct MinecraftProfile {
+
+ enum class AccountType {
+     MSA,
+-    Mojang
++    Mojang,
++    Offline
+ };
+
+ enum class AccountState {
+diff --git a/launcher/minecraft/auth/AccountList.cpp b/launcher/minecraft/auth/AccountList.cpp
+index ef8b435d..04470e1c 100644
+--- a/launcher/minecraft/auth/AccountList.cpp
++++ b/launcher/minecraft/auth/AccountList.cpp
+@@ -302,7 +302,7 @@ QVariant AccountList::data(const QModelIndex &index, int role) const
+             }
+
+             case MigrationColumn: {
+-                if(account->isMSA()) {
++                if(account->isMSA() || account->isOffline()) {
+                     return tr("N/A", "Can Migrate?");
+                 }
+                 if (account->canMigrate()) {
+diff --git a/launcher/minecraft/auth/MinecraftAccount.cpp b/launcher/minecraft/auth/MinecraftAccount.cpp
+index ed9e945e..ffc81ed8 100644
+--- a/launcher/minecraft/auth/MinecraftAccount.cpp
++++ b/launcher/minecraft/auth/MinecraftAccount.cpp
+@@ -30,6 +30,7 @@
+
+ #include "flows/MSA.h"
+ #include "flows/Mojang.h"
++#include "flows/Offline.h"
+
+ MinecraftAccount::MinecraftAccount(QObject* parent) : QObject(parent) {
+     data.internalId = QUuid::createUuid().toString().remove(QRegExp("[{}-]"));
+@@ -68,6 +69,23 @@ MinecraftAccountPtr MinecraftAccount::createBlankMSA()
+     return account;
+ }
+
++MinecraftAccountPtr MinecraftAccount::createOffline(const QString &username)
++{
++    MinecraftAccountPtr account = new MinecraftAccount();
++    account->data.type = AccountType::Offline;
++    account->data.yggdrasilToken.token = "offline";
++    account->data.yggdrasilToken.validity = Katabasis::Validity::Certain;
++    account->data.yggdrasilToken.issueInstant = QDateTime::currentDateTimeUtc();
++    account->data.yggdrasilToken.extra["userName"] = username;
++    account->data.yggdrasilToken.extra["clientToken"] = QUuid::createUuid().toString().remove(QRegExp("[{}-]"));
++    account->data.minecraftEntitlement.ownsMinecraft = true;
++    account->data.minecraftEntitlement.canPlayMinecraft = true;
++    account->data.minecraftProfile.id = QUuid::createUuid().toString().remove(QRegExp("[{}-]"));
++    account->data.minecraftProfile.name = username;
++    account->data.minecraftProfile.validity = Katabasis::Validity::Certain;
++    return account;
++}
++
+
+ QJsonObject MinecraftAccount::saveToJson() const
+ {
+@@ -111,6 +129,16 @@ shared_qobject_ptr<AccountTask> MinecraftAccount::loginMSA() {
+     return m_currentTask;
+ }
+
++shared_qobject_ptr<AccountTask> MinecraftAccount::loginOffline() {
++    Q_ASSERT(m_currentTask.get() == nullptr);
++
++    m_currentTask.reset(new OfflineLogin(&data));
++    connect(m_currentTask.get(), SIGNAL(succeeded()), SLOT(authSucceeded()));
++    connect(m_currentTask.get(), SIGNAL(failed(QString)), SLOT(authFailed(QString)));
++    emit activityChanged(true);
++    return m_currentTask;
++}
++
+ shared_qobject_ptr<AccountTask> MinecraftAccount::refresh() {
+     if(m_currentTask) {
+         return m_currentTask;
+@@ -119,6 +147,9 @@ shared_qobject_ptr<AccountTask> MinecraftAccount::refresh() {
+     if(data.type == AccountType::MSA) {
+         m_currentTask.reset(new MSASilent(&data));
+     }
++    else if(data.type == AccountType::Offline) {
++        m_currentTask.reset(new OfflineRefresh(&data));
++    }
+     else {
+         m_currentTask.reset(new MojangRefresh(&data));
+     }
+diff --git a/launcher/minecraft/auth/MinecraftAccount.h b/launcher/minecraft/auth/MinecraftAccount.h
+index 7ab3c746..6592f9c0 100644
+--- a/launcher/minecraft/auth/MinecraftAccount.h
++++ b/launcher/minecraft/auth/MinecraftAccount.h
+@@ -73,6 +73,8 @@ public: /* construction */
+
+     static MinecraftAccountPtr createBlankMSA();
+
++    static MinecraftAccountPtr createOffline(const QString &username);
++
+     static MinecraftAccountPtr loadFromJsonV2(const QJsonObject &json);
+     static MinecraftAccountPtr loadFromJsonV3(const QJsonObject &json);
+
+@@ -89,6 +91,8 @@ public: /* manipulation */
+
+     shared_qobject_ptr<AccountTask> loginMSA();
+
++    shared_qobject_ptr<AccountTask> loginOffline();
++
+     shared_qobject_ptr<AccountTask> refresh();
+
+     shared_qobject_ptr<AccountTask> currentTask();
+@@ -128,6 +132,10 @@ public: /* queries */
+         return data.type == AccountType::MSA;
+     }
+
++    bool isOffline() const {
++        return data.type == AccountType::Offline;
++    }
++
+     bool ownsMinecraft() const {
+         return data.minecraftEntitlement.ownsMinecraft;
+     }
+@@ -149,6 +157,10 @@ public: /* queries */
+                 return "msa";
+             }
+             break;
++            case AccountType::Offline: {
++                return "offline";
++            }
++            break;
+             default: {
+                 return "unknown";
+             }
+diff --git a/launcher/minecraft/auth/flows/Offline.cpp b/launcher/minecraft/auth/flows/Offline.cpp
+new file mode 100644
+index 00000000..fc614a8c
+--- /dev/null
++++ b/launcher/minecraft/auth/flows/Offline.cpp
+@@ -0,0 +1,17 @@
++#include "Offline.h"
++
++#include "minecraft/auth/steps/OfflineStep.h"
++
++OfflineRefresh::OfflineRefresh(
++    AccountData *data,
++    QObject *parent
++) : AuthFlow(data, parent) {
++    m_steps.append(new OfflineStep(m_data));
++}
++
++OfflineLogin::OfflineLogin(
++    AccountData *data,
++    QObject *parent
++) : AuthFlow(data, parent) {
++    m_steps.append(new OfflineStep(m_data));
++}
+diff --git a/launcher/minecraft/auth/flows/Offline.h b/launcher/minecraft/auth/flows/Offline.h
+new file mode 100644
+index 00000000..5d1f83a4
+--- /dev/null
++++ b/launcher/minecraft/auth/flows/Offline.h
+@@ -0,0 +1,22 @@
++#pragma once
++#include "AuthFlow.h"
++
++class OfflineRefresh : public AuthFlow
++{
++    Q_OBJECT
++public:
++    explicit OfflineRefresh(
++        AccountData *data,
++        QObject *parent = 0
++    );
++};
++
++class OfflineLogin : public AuthFlow
++{
++    Q_OBJECT
++public:
++    explicit OfflineLogin(
++        AccountData *data,
++        QObject *parent = 0
++    );
++};
+diff --git a/launcher/minecraft/auth/steps/OfflineStep.cpp b/launcher/minecraft/auth/steps/OfflineStep.cpp
+new file mode 100644
+index 00000000..dc092bfd
+--- /dev/null
++++ b/launcher/minecraft/auth/steps/OfflineStep.cpp
+@@ -0,0 +1,18 @@
++#include "OfflineStep.h"
++
++#include "Application.h"
++
++OfflineStep::OfflineStep(AccountData* data) : AuthStep(data) {}
++OfflineStep::~OfflineStep() noexcept = default;
++
++QString OfflineStep::describe() {
++    return tr("Creating offline account.");
++}
++
++void OfflineStep::rehydrate() {
++    // NOOP
++}
++
++void OfflineStep::perform() {
++    emit finished(AccountTaskState::STATE_WORKING, tr("Created offline account."));
++}
+diff --git a/launcher/minecraft/auth/steps/OfflineStep.h b/launcher/minecraft/auth/steps/OfflineStep.h
+new file mode 100644
+index 00000000..436597cd
+--- /dev/null
++++ b/launcher/minecraft/auth/steps/OfflineStep.h
+@@ -0,0 +1,19 @@
++#pragma once
++#include <QObject>
++
++#include "QObjectPtr.h"
++#include "minecraft/auth/AuthStep.h"
++
++#include <katabasis/DeviceFlow.h>
++
++class OfflineStep : public AuthStep {
++    Q_OBJECT
++public:
++    explicit OfflineStep(AccountData *data);
++    virtual ~OfflineStep() noexcept;
++
++    void perform() override;
++    void rehydrate() override;
++
++    QString describe() override;
++};
+diff --git a/launcher/ui/dialogs/OfflineLoginDialog.cpp b/launcher/ui/dialogs/OfflineLoginDialog.cpp
+new file mode 100644
+index 00000000..345ed40a
+--- /dev/null
++++ b/launcher/ui/dialogs/OfflineLoginDialog.cpp
+@@ -0,0 +1,98 @@
++#include "OfflineLoginDialog.h"
++#include "ui_OfflineLoginDialog.h"
++
++#include "minecraft/auth/AccountTask.h"
++
++#include <QtWidgets/QPushButton>
++
++OfflineLoginDialog::OfflineLoginDialog(QWidget *parent) : QDialog(parent), ui(new Ui::OfflineLoginDialog)
++{
++    ui->setupUi(this);
++    ui->progressBar->setVisible(false);
++    ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
++
++    connect(ui->buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
++    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
++}
++
++OfflineLoginDialog::~OfflineLoginDialog()
++{
++    delete ui;
++}
++
++// Stage 1: User interaction
++void OfflineLoginDialog::accept()
++{
++    setUserInputsEnabled(false);
++    ui->progressBar->setVisible(true);
++
++    // Setup the login task and start it
++    m_account = MinecraftAccount::createOffline(ui->userTextBox->text());
++    m_loginTask = m_account->loginOffline();
++    connect(m_loginTask.get(), &Task::failed, this, &OfflineLoginDialog::onTaskFailed);
++    connect(m_loginTask.get(), &Task::succeeded, this, &OfflineLoginDialog::onTaskSucceeded);
++    connect(m_loginTask.get(), &Task::status, this, &OfflineLoginDialog::onTaskStatus);
++    connect(m_loginTask.get(), &Task::progress, this, &OfflineLoginDialog::onTaskProgress);
++    m_loginTask->start();
++}
++
++void OfflineLoginDialog::setUserInputsEnabled(bool enable)
++{
++    ui->userTextBox->setEnabled(enable);
++    ui->buttonBox->setEnabled(enable);
++}
++
++// Enable the OK button only when the textbox contains something.
++void OfflineLoginDialog::on_userTextBox_textEdited(const QString &newText)
++{
++    ui->buttonBox->button(QDialogButtonBox::Ok)
++        ->setEnabled(!newText.isEmpty());
++}
++
++void OfflineLoginDialog::onTaskFailed(const QString &reason)
++{
++    // Set message
++    auto lines = reason.split('\n');
++    QString processed;
++    for(auto line: lines) {
++        if(line.size()) {
++            processed += "<font color='red'>" + line + "</font><br />";
++        }
++        else {
++            processed += "<br />";
++        }
++    }
++    ui->label->setText(processed);
++
++    // Re-enable user-interaction
++    setUserInputsEnabled(true);
++    ui->progressBar->setVisible(false);
++}
++
++void OfflineLoginDialog::onTaskSucceeded()
++{
++    QDialog::accept();
++}
++
++void OfflineLoginDialog::onTaskStatus(const QString &status)
++{
++    ui->label->setText(status);
++}
++
++void OfflineLoginDialog::onTaskProgress(qint64 current, qint64 total)
++{
++    ui->progressBar->setMaximum(total);
++    ui->progressBar->setValue(current);
++}
++
++// Public interface
++MinecraftAccountPtr OfflineLoginDialog::newAccount(QWidget *parent, QString msg)
++{
++    OfflineLoginDialog dlg(parent);
++    dlg.ui->label->setText(msg);
++    if (dlg.exec() == QDialog::Accepted)
++    {
++        return dlg.m_account;
++    }
++    return 0;
++}
+diff --git a/launcher/ui/dialogs/OfflineLoginDialog.h b/launcher/ui/dialogs/OfflineLoginDialog.h
+new file mode 100644
+index 00000000..5e608379
+--- /dev/null
++++ b/launcher/ui/dialogs/OfflineLoginDialog.h
+@@ -0,0 +1,43 @@
++#pragma once
++
++#include <QtWidgets/QDialog>
++#include <QtCore/QEventLoop>
++
++#include "minecraft/auth/MinecraftAccount.h"
++#include "tasks/Task.h"
++
++namespace Ui
++{
++class OfflineLoginDialog;
++}
++
++class OfflineLoginDialog : public QDialog
++{
++    Q_OBJECT
++
++public:
++    ~OfflineLoginDialog();
++
++    static MinecraftAccountPtr newAccount(QWidget *parent, QString message);
++
++private:
++    explicit OfflineLoginDialog(QWidget *parent = 0);
++
++    void setUserInputsEnabled(bool enable);
++
++protected
++slots:
++    void accept();
++
++    void onTaskFailed(const QString &reason);
++    void onTaskSucceeded();
++    void onTaskStatus(const QString &status);
++    void onTaskProgress(qint64 current, qint64 total);
++
++    void on_userTextBox_textEdited(const QString &newText);
++
++private:
++    Ui::OfflineLoginDialog *ui;
++    MinecraftAccountPtr m_account;
++    Task::Ptr m_loginTask;
++};
+diff --git a/launcher/ui/dialogs/OfflineLoginDialog.ui b/launcher/ui/dialogs/OfflineLoginDialog.ui
+new file mode 100644
+index 00000000..d8964a2e
+--- /dev/null
++++ b/launcher/ui/dialogs/OfflineLoginDialog.ui
+@@ -0,0 +1,67 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<ui version="4.0">
++ <class>OfflineLoginDialog</class>
++ <widget class="QDialog" name="OfflineLoginDialog">
++  <property name="geometry">
++   <rect>
++    <x>0</x>
++    <y>0</y>
++    <width>400</width>
++    <height>150</height>
++   </rect>
++  </property>
++  <property name="sizePolicy">
++   <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
++    <horstretch>0</horstretch>
++    <verstretch>0</verstretch>
++   </sizepolicy>
++  </property>
++  <property name="windowTitle">
++   <string>Add Account</string>
++  </property>
++  <layout class="QVBoxLayout" name="verticalLayout">
++   <item>
++    <widget class="QLabel" name="label">
++     <property name="text">
++      <string notr="true">Message label placeholder.</string>
++     </property>
++     <property name="textFormat">
++      <enum>Qt::RichText</enum>
++     </property>
++     <property name="textInteractionFlags">
++      <set>Qt::LinksAccessibleByKeyboard|Qt::LinksAccessibleByMouse|Qt::TextBrowserInteraction|Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse</set>
++     </property>
++    </widget>
++   </item>
++   <item>
++    <widget class="QLineEdit" name="userTextBox">
++     <property name="placeholderText">
++      <string>Username</string>
++     </property>
++    </widget>
++   </item>
++   <item>
++    <widget class="QProgressBar" name="progressBar">
++     <property name="value">
++      <number>69</number>
++     </property>
++     <property name="textVisible">
++      <bool>false</bool>
++     </property>
++    </widget>
++   </item>
++   <item>
++    <widget class="QDialogButtonBox" name="buttonBox">
++     <property name="orientation">
++      <enum>Qt::Horizontal</enum>
++     </property>
++     <property name="standardButtons">
++      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
++     </property>
++    </widget>
++   </item>
++  </layout>
++ </widget>
++ <resources/>
++ <connections/>
++</ui>
+diff --git a/launcher/ui/pages/global/AccountListPage.cpp b/launcher/ui/pages/global/AccountListPage.cpp
+index b8da6c75..b9aa7628 100644
+--- a/launcher/ui/pages/global/AccountListPage.cpp
++++ b/launcher/ui/pages/global/AccountListPage.cpp
+@@ -24,6 +24,7 @@
+ #include "net/NetJob.h"
+
+ #include "ui/dialogs/ProgressDialog.h"
++#include "ui/dialogs/OfflineLoginDialog.h"
+ #include "ui/dialogs/LoginDialog.h"
+ #include "ui/dialogs/MSALoginDialog.h"
+ #include "ui/dialogs/CustomMessageBox.h"
+@@ -153,6 +154,22 @@ void AccountListPage::on_actionAddMicrosoft_triggered()
+     }
+ }
+
++void AccountListPage::on_actionAddOffline_triggered()
++{
++    MinecraftAccountPtr account = OfflineLoginDialog::newAccount(
++        this,
++        tr("Please enter your desired username to add your offline account.")
++    );
++
++    if (account)
++    {
++        m_accounts->addAccount(account);
++        if (m_accounts->count() == 1) {
++            m_accounts->setDefaultAccount(account);
++        }
++    }
++}
++
+ void AccountListPage::on_actionRemove_triggered()
+ {
+     QModelIndexList selection = ui->listView->selectionModel()->selectedIndexes();
+diff --git a/launcher/ui/pages/global/AccountListPage.h b/launcher/ui/pages/global/AccountListPage.h
+index 1c65e708..841c3fd2 100644
+--- a/launcher/ui/pages/global/AccountListPage.h
++++ b/launcher/ui/pages/global/AccountListPage.h
+@@ -62,6 +62,7 @@ public:
+ public slots:
+     void on_actionAddMojang_triggered();
+     void on_actionAddMicrosoft_triggered();
++    void on_actionAddOffline_triggered();
+     void on_actionRemove_triggered();
+     void on_actionRefresh_triggered();
+     void on_actionSetDefault_triggered();
+diff --git a/launcher/ui/pages/global/AccountListPage.ui b/launcher/ui/pages/global/AccountListPage.ui
+index 29738c02..d21a92e2 100644
+--- a/launcher/ui/pages/global/AccountListPage.ui
++++ b/launcher/ui/pages/global/AccountListPage.ui
+@@ -54,6 +54,7 @@
+    </attribute>
+    <addaction name="actionAddMicrosoft"/>
+    <addaction name="actionAddMojang"/>
++   <addaction name="actionAddOffline"/>
+    <addaction name="actionRefresh"/>
+    <addaction name="actionRemove"/>
+    <addaction name="actionSetDefault"/>
+@@ -103,6 +104,11 @@
+     <string>Add Microsoft</string>
+    </property>
+   </action>
++  <action name="actionAddOffline">
++   <property name="text">
++    <string>Add Offline</string>
++   </property>
++  </action>
+   <action name="actionRefresh">
+    <property name="text">
+     <string>Refresh</string>
