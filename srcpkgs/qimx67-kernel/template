@@ -1,10 +1,10 @@
 # Template file for 'qimx67-kernel'
 
-_githash="bd5bae795c08851760f57cd6be11c2480c91c2e2"
+_githash="83c68a4f7f646729f11ce231e72de57c42a5bfa8"
 _gitshort="${_githash:0:7}"
 
 pkgname=qimx67-kernel
-version=5.16.14
+version=5.17.0
 revision=1
 archs="armv7l*"
 wrksrc="linux-${_githash}"
@@ -15,7 +15,7 @@ maintainer="Quentin Freimanis <quentinfreimanis@gmail.com>"
 license="GPL-2.0-only"
 homepage="http://www.kernel.org"
 distfiles="https://gitlab.com/quentin-z80/linux/-/archive/${_githash}.tar.gz"
-checksum=5dca4d84ada8c427d4f3dfdbb044607616dd290d3820d4c03515811e24b10eff
+checksum=74a63ad95829331046fc55c31d69a6f456a22c1e94e1114f9843463f8fd3a711
 python_version=3
 
 _kernver="${version}_${revision}"
