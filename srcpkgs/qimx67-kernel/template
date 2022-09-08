@@ -1,21 +1,17 @@
 # Template file for 'qimx67-kernel'
-
-_githash="83c68a4f7f646729f11ce231e72de57c42a5bfa8"
-_gitshort="${_githash:0:7}"
-
 pkgname=qimx67-kernel
-version=5.17.0
+version=5.19.6
 revision=1
 archs="armv7l*"
-wrksrc="linux-${_githash}"
+wrksrc="linux-qlab-v${version}"
 hostmakedepends="perl kmod openssl-devel bc bison flex lzop"
 makedepends="ncurses-devel"
-short_desc="Linux Kernel for qlab imx6/7 SBCs"
+short_desc="Q-Lab Linux Kernel for i.MX6/7"
 maintainer="Quentin Freimanis <quentinfreimanis@gmail.com>"
 license="GPL-2.0-only"
 homepage="http://www.kernel.org"
-distfiles="https://gitlab.com/quentin-z80/linux/-/archive/${_githash}.tar.gz"
-checksum=74a63ad95829331046fc55c31d69a6f456a22c1e94e1114f9843463f8fd3a711
+distfiles="https://gitlab.com/quentin-z80/linux/-/archive/qlab-v${version}/linux-qlab-v${version}.tar.gz"
+checksum=e33a7e864c9a7892bef7ae7552853aa666600c312406230e834ae7e12dca65b4
 python_version=3
 
 _kernver="${version}_${revision}"
@@ -63,14 +59,11 @@ do_configure() {
 
 	defconfig="arch/arm/configs/imx_v6_v7_defconfig"
 
-	echo "CONFIG_F2FS_FS_SECURITY=y" >> "$defconfig"
-	echo "CONFIG_CGROUP_PIDS=y" >> "$defconfig"
+        echo "CONFIG_F2FS_FS_SECURITY=y" >> "$defconfig"
+        echo "CONFIG_CGROUP_PIDS=y" >> "$defconfig"
 
-	# LXD 4.2+ support
+        # LXD 4.2+ support
         echo "CONFIG_BRIDGE_VLAN_FILTERING=y" >> "$defconfig"
-
-        # Disable GCC plugins
-        echo "# CONFIG_GCC_PLUGINS is not set" >> "$defconfig"
 
 	make ${makejobs} ${_cross} ARCH=${_arch} imx_v6_v7_defconfig
 
