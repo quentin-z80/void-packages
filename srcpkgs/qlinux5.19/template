@@ -1,6 +1,6 @@
 # Template file for 'qlinux5.19'
 pkgname=qlinux5.19
-version=5.19.6
+version=5.19.9
 revision=1
 wrksrc="linux-qlab-v${version}"
 short_desc="Linux kernel and modules (${version%.*} series)"
@@ -8,7 +8,7 @@ maintainer="Quentin Freimanis <quentinfreimanis@gmail.com>"
 license="GPL-2.0-only"
 homepage="https://www.kernel.org"
 distfiles="https://gitlab.com/quentin-z80/linux/-/archive/qlab-v${version}/linux-qlab-v${version}.tar.gz"
-checksum=e33a7e864c9a7892bef7ae7552853aa666600c312406230e834ae7e12dca65b4
+checksum=2a0ded9de3187d2d04a0a3f55654ba6a8e0e536b06d6724dc1fe259d1781057c
 conflicts="linux5.19"
 python_version=3
 
