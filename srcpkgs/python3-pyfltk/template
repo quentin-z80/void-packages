@@ -1,6 +1,6 @@
 # Template file for 'python3-pyfltk'
 pkgname=python3-pyfltk
-version=1.3.7
+version=1.3.8
 revision=1
 wrksrc=pyFltk-${version}
 build_style=python3-module
@@ -12,7 +12,7 @@ maintainer="Quentin Freimanis <quentinfreimanis@gmail.com>"
 license="LGPL-2.0-only"
 homepage="https://pyfltk.sourceforge.io"
 distfiles="https://sourceforge.net/projects/pyfltk/files/pyfltk/pyFltk-${version}/pyFltk-${version}.tar.gz"
-checksum=aeea49981be8536a02a4e431e4fe3361813d2bba37eb17edaa46bbd7e5ca3abb
+checksum=f7c5012810022dce011f3ed9f3f004c56e08090823739bfe670881fce9611f80
 
 pre_build() {
 	python3 setup.py swig
