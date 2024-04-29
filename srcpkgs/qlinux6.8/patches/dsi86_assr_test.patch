@@ -1,0 +1,135 @@
+diff --git a/arch/arm64/boot/dts/freescale/imx8mm-qsbc.dts b/arch/arm64/boot/dts/freescale/imx8mm-qsbc.dts
+index 3fbda4ae4f4f..17ad625a8a19 100644
+--- a/arch/arm64/boot/dts/freescale/imx8mm-qsbc.dts
++++ b/arch/arm64/boot/dts/freescale/imx8mm-qsbc.dts
+@@ -307,13 +307,14 @@ edp_bridge: bridge@2c {
+         pinctrl-names = "default";
+         pinctrl-0 = <&pinctrl_edp_bridge>;
+         reg = <0x2c>;
+-        enable-gpios = <&gpio5 10 GPIO_ACTIVE_LOW>;
++        enable-gpios = <&gpio5 10 GPIO_ACTIVE_HIGH>;
+         interrupt-parent = <&gpio5>;
+         interrupts = <7 IRQ_TYPE_LEVEL_HIGH>;
+         vccio-supply = <&buck5_reg>;
+         vpll-supply = <&buck5_reg>;
+         vcca-supply = <&reg_dsi86_1v2>;
+         vcc-supply = <&reg_dsi86_1v2>;
++        ti,assr-disable;
+ 
+         clock-names = "dsi86_refclk";
+         clocks = <&dsi86_refclk>;
+@@ -458,8 +459,12 @@ usb2hs: endpoint {
+     };
+ };
+ 
++&lcdif {
++	status = "okay";
++};
+ 
+ &mipi_dsi {
++    samsung,esc-clock-frequency = <20000000>;
+     status = "okay";
+ 
+     ports {
+@@ -473,7 +478,6 @@ mipi_dsi_out: endpoint {
+     };
+ };
+ 
+-
+ &pcie_phy {
+     fsl,clkreq-unsupported;
+     fsl,refclk-pad-mode = <IMX8_PCIE_REFCLK_PAD_INPUT>;
+@@ -628,7 +632,7 @@ MX8MM_IOMUXC_GPIO1_IO04_GPIO1_IO4	0x140
+ 
+     pinctrl_edp_bridge: edpbridgegrp {
+         fsl,pins = <
+-            MX8MM_IOMUXC_ECSPI2_SCLK_GPIO5_IO10 0x0
++            MX8MM_IOMUXC_ECSPI2_SCLK_GPIO5_IO10 0x100
+             MX8MM_IOMUXC_ECSPI1_MOSI_GPIO5_IO7 0x100
+         >;
+     };
+diff --git a/drivers/gpu/drm/bridge/ti-sn65dsi86.c b/drivers/gpu/drm/bridge/ti-sn65dsi86.c
+index 62cc3893dca5..d95cfefc5d4f 100644
+--- a/drivers/gpu/drm/bridge/ti-sn65dsi86.c
++++ b/drivers/gpu/drm/bridge/ti-sn65dsi86.c
+@@ -65,6 +65,9 @@
+ #define  VSTREAM_ENABLE				BIT(3)
+ #define  LN_POLRS_OFFSET			4
+ #define  LN_POLRS_MASK				0xf0
++#define  ASSR_CONTROL_MASK			0x3
++#define  SCRAMBLER_STANDARD_DP_SEED 0
++#define  SCRAMBLER_ASSR             0x1
+ #define SN_DATA_FORMAT_REG			0x5B
+ #define  BPP_18_RGB				BIT(0)
+ #define SN_HPD_DISABLE_REG			0x5C
+@@ -110,6 +113,12 @@
+ #define  AUX_IRQ_STATUS_AUX_RPLY_TOUT		BIT(3)
+ #define  AUX_IRQ_STATUS_AUX_SHORT		BIT(5)
+ #define  AUX_IRQ_STATUS_NAT_I2C_FAIL		BIT(6)
++#define SN_PAGE_SELECT_REG			0xFF
++#define  PAGE_SELECT_MASK			GENMASK(2, 0)
++#define  PAGE_STD_CFR				0
++#define  PAGE_TI_TEST				0x7
++#define SN_P7_ASSR_OVERRIDE_REG	    0x16
++#define  ASSR_OVERRIDE 			    BIT(0)
+ 
+ #define MIN_DSI_CLK_FREQ_MHZ	40
+ 
+@@ -152,6 +161,8 @@
+  * @ln_assign:    Value to program to the LN_ASSIGN register.
+  * @ln_polrs:     Value for the 4-bit LN_POLRS field of SN_ENH_FRAME_REG.
+  * @comms_enabled: If true then communication over the aux channel is enabled.
++ * @assr_disable: If true then ASSR is disabled.
++ *                Reqires TEST2 to be pulled high.
+  * @comms_mutex:   Protects modification of comms_enabled.
+  *
+  * @gchip:        If we expose our GPIOs, this is used.
+@@ -190,6 +201,7 @@ struct ti_sn65dsi86 {
+ 	u8				ln_assign;
+ 	u8				ln_polrs;
+ 	bool				comms_enabled;
++	bool			assr_disable;
+ 	struct mutex			comms_mutex;
+ 
+ #if defined(CONFIG_OF_GPIO)
+@@ -1126,6 +1138,16 @@ static void ti_sn_bridge_atomic_enable(struct drm_bridge *bridge,
+ 				   SCRAMBLE_DISABLE, SCRAMBLE_DISABLE);
+ 	}
+ 
++	if (pdata->assr_disable) {
++		regmap_update_bits(pdata->regmap, SN_PAGE_SELECT_REG,
++				   PAGE_SELECT_MASK, PAGE_TI_TEST);
++		regmap_update_bits(pdata->regmap, SN_P7_ASSR_OVERRIDE_REG, ASSR_OVERRIDE,
++				   ASSR_OVERRIDE);
++		regmap_update_bits(pdata->regmap, SN_PAGE_SELECT_REG,
++				   PAGE_SELECT_MASK, PAGE_STD_CFR);
++		regmap_update_bits(pdata->regmap, SN_ENH_FRAME_REG, ASSR_CONTROL_MASK, SCRAMBLER_STANDARD_DP_SEED);
++	}
++
+ 	bpp = ti_sn_bridge_get_bpp(connector);
+ 	/* Set the DP output format (18 bpp or 24 bpp) */
+ 	val = bpp == 18 ? BPP_18_RGB : 0;
+@@ -1925,6 +1947,11 @@ static int ti_sn65dsi86_probe(struct i2c_client *client)
+ 		return dev_err_probe(dev, PTR_ERR(pdata->refclk),
+ 				     "failed to get reference clock\n");
+ 
++	pdata->assr_disable = of_property_read_bool(dev->of_node, "ti,assr-disable");
++	if (pdata->assr_disable) {
++		dev_info(dev, "ASSR disabled\n");
++	}
++
+ 	pm_runtime_enable(dev);
+ 	pm_runtime_set_autosuspend_delay(pdata->dev, 500);
+ 	pm_runtime_use_autosuspend(pdata->dev);
+diff --git a/drivers/net/phy/phy-core.c b/drivers/net/phy/phy-core.c
+index 15f349e5995a..fd91780751ea 100644
+--- a/drivers/net/phy/phy-core.c
++++ b/drivers/net/phy/phy-core.c
+@@ -130,6 +130,7 @@ int phy_interface_num_ports(phy_interface_t interface)
+ 	case PHY_INTERFACE_MODE_SMII:
+ 	case PHY_INTERFACE_MODE_1000BASEX:
+ 	case PHY_INTERFACE_MODE_2500BASEX:
++	case PHY_INTERFACE_MODE_2500SGMII:
+ 	case PHY_INTERFACE_MODE_5GBASER:
+ 	case PHY_INTERFACE_MODE_10GBASER:
+ 	case PHY_INTERFACE_MODE_25GBASER:
