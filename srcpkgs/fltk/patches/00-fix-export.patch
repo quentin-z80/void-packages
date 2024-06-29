@@ -1,0 +1,31 @@
+From 25d7ed7e0deba1dcd4c63503e96eb43fcdab632e Mon Sep 17 00:00:00 2001
+From: Albrecht Schlosser <albrechts.fltk@online.de>
+Date: Sun, 3 Mar 2024 14:00:19 +0100
+Subject: [PATCH] Add missing FL_EXPORT of class Fl_XFont_On_Demand (#922)
+
+---
+ FL/x.H | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/FL/x.H b/FL/x.H
+index a4c5799994..6b7d432dbb 100644
+--- a/FL/x.H
++++ b/FL/x.H
+@@ -1,7 +1,7 @@
+ //
+ // X11 header file for the Fast Light Tool Kit (FLTK).
+ //
+-// Copyright 1998-2023 by Bill Spitzak and others.
++// Copyright 1998-2024 by Bill Spitzak and others.
+ //
+ // This library is free software. Distribution and use rights are outlined in
+ // the file "COPYING" which should have been included with this file.  If this
+@@ -105,7 +105,7 @@ FL_EXPORT Fl_Region XRectangleRegion(int x, int y, int w, int h); // in fl_rect.
+ // With Xlib / X11 fonts, fl_xfont will return the current selected font.
+ // With XFT / X11 fonts, fl_xfont will attempt to return the bitmap "core" font most
+ // similar to (usually the same as) the current XFT font.
+-class Fl_XFont_On_Demand
++class FL_EXPORT Fl_XFont_On_Demand
+ {
+ public:
+   Fl_XFont_On_Demand(XFontStruct* p = NULL) : ptr(p) { }
